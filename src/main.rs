@@ -21,7 +21,7 @@ extern crate regex;
 use fuse::{
     FileAttr, FileType, Filesystem, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry, Request,
 };
-use libc::{ENOENT};
+use libc::ENOENT;
 use netfuse::MountOptions;
 use netfuse::{DirEntry, LibcError, Metadata, NetworkFilesystem};
 use std::collections::HashMap;
@@ -38,11 +38,8 @@ extern crate time;
 mod aha;
 mod github;
 
-use serde::{Deserialize};
+use serde::Deserialize;
 use serde_json::Value;
-
-
-
 
 #[derive(StructOpt, Debug)]
 pub struct Opt {
@@ -164,15 +161,54 @@ fn load_config() -> Result<(Env, Opt), Box<dyn Error>> {
 
     Ok((config, opt))
 }
-struct AhaFS {}
+struct AhaFS {
+    products: HashMap<String, String>,
+    releases: HashMap<String, String>,
+    features: HashMap<String, String>,
+    epics: HashMap<String, String>,
+}
 impl AhaFS {
     pub fn mount(options: MountOptions) {
-        let afs = AhaFS {};
+        let afs = AhaFS {
+            products: HashMap::new(),
+            releases: HashMap::new(),
+            features: HashMap::new(),
+            epics: HashMap::new(),
+        };
         netfuse::mount(afs, options);
     }
 }
 
-fn build_dir_entry(_item: &Value) -> DirEntry {
+fn build_dir_entry(item: &Value, path_string: &str) -> DirEntry {
+    if path_string.contains("/features/") {
+        let meta = Metadata {
+            size: item["description"]["body"]
+                .as_str()
+                .unwrap()
+                .to_string()
+                .as_bytes()
+                .len() as u64,
+            atime: DEFAULT_TIME,
+            mtime: DEFAULT_TIME,
+            ctime: DEFAULT_TIME,
+            crtime: DEFAULT_TIME,
+            kind: FileType::RegularFile,
+            perm: 0o640,
+        };
+        DirEntry::new(item["name"].as_str().expect("file has no name"), meta)
+    } else {
+        let meta = Metadata {
+            size: 0,
+            atime: DEFAULT_TIME,
+            mtime: DEFAULT_TIME,
+            ctime: DEFAULT_TIME,
+            crtime: DEFAULT_TIME,
+            kind: FileType::Directory,
+            // TODO: API should indicate if dir is listable or not
+            perm: 0o750,
+        };
+        DirEntry::new(item["name"].as_str().expect("dir has no name"), meta)
+    }
     /*
     match item {
         &Value::Dir(ref d) => {
@@ -203,17 +239,6 @@ fn build_dir_entry(_item: &Value) -> DirEntry {
         }
     }
     */
-    let meta = Metadata {
-        size: 0,
-        atime: DEFAULT_TIME,
-        mtime: DEFAULT_TIME,
-        ctime: DEFAULT_TIME,
-        crtime: DEFAULT_TIME,
-        kind: FileType::Directory,
-        // TODO: API should indicate if dir is listable or not
-        perm: 0o750,
-    };
-    DirEntry::new("file has no name", meta)
 }
 
 fn basic_dir_entry(path: &str, perm: u16) -> DirEntry {
@@ -257,31 +282,57 @@ impl NetworkFilesystem for AhaFS {
         };
 
         println!("AFS readdir:  {} -> {}", path.display(), uri);
-
         let aha = aha::Aha::new(
             AHACONFIG.0.aha_domain.clone(),
             AHACONFIG.0.aha_token.clone(),
             AHACONFIG.0.workflow_email.clone(),
             &AHACONFIG.1,
         );
-        let dir = aha.get_uri(&uri);
-        let iter = dir.iter().map(|child| Ok(build_dir_entry(&child)));
-        /*
-                let dir = self.client.dir(&uri);
-                let iter = dir.list().map(move |child_res| match child_res {
-                    Ok(data_item) => Ok(build_dir_entry(&data_item)),
-                    Err(err) => eio!("AFS readdir error: {}", err),
-                });
-               let iter= vec![].iter();
-                // Returning an Iteratator Trait Object is a bit inflexible.
-                // We can't return iter, because it references `dir` (which does NOT reference self)
-                //   so it's lifetime ends with this function.
-                // We could add `dir` to self, but may need to be able to track multiple dirs
-                //   and dropping them becomes quite complicated
-                //   so until the trait can return `impl Iterator<Item=Result<DirEntry, LibCError>>`
-                //   we're just gonna kill the laziness by collecting early
-                //   and to return an IntoIterator that owns all of it's data.
-        */
+        let path_string = path.display().to_string();
+        let mut count = path_string.matches("/").count();
+        if count == 3 {
+            return Box::new(
+                vec![
+                    Ok(basic_dir_entry("epics", 0o750)),
+                    Ok(basic_dir_entry("features", 0o750)),
+                ]
+                .into_iter(),
+            );
+        }
+        let mut parent_dir = path_string.clone().to_string();
+        if count > 2 {
+            parent_dir = path_string.rsplitn(2, "/").last().unwrap().to_string();
+        }
+        dbg!(count, &parent_dir);
+        let parent = match count {
+            2 => self.products.get(&parent_dir.to_string()),
+            4 => self.releases.get(&parent_dir.to_string()),
+            _ => None,
+        };
+        let dir = aha.get_uri(&path_string, parent);
+        for x in &dir {
+            dbg!(&x);
+            let key = format!("{}/{}", path_string, x["name"].as_str().unwrap());
+            let value = x["id"].as_str().unwrap().to_string();
+            dbg!(&key, &value);
+            match count {
+                1 => {
+                    self.products.insert(key, value);
+                }
+
+                2 => {
+                    self.releases.insert(key, value);
+                }
+
+                4 => {
+                    self.features.insert(key, value);
+                }
+                _ => (),
+            };
+        }
+        let iter = dir
+            .iter()
+            .map(|child| Ok(build_dir_entry(&child, &path_string)));
         let hack = iter.collect::<Vec<_>>().into_iter();
         Box::new(hack)
     }
@@ -359,5 +410,8 @@ pub fn uri_to_path(uri: &str) -> PathBuf {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let mnt = "/tmp/ahafs".to_string();
+    let options = netfuse::MountOptions::new(&mnt);
+    AhaFS::mount(options);
     Ok(())
 }

@@ -20,9 +20,17 @@ pub struct Aha<'a> {
 }
 
 impl<'a> Aha<'a> {
-    pub fn get_uri(&self, _uri: &str) -> Vec<Value> {
+    pub fn get_uri(&self, uri: &str, parent: Option<&String>) -> Vec<Value> {
         let result: Vec<Value> = vec![];
-        result
+
+        let mut count = uri.matches("/").count();
+        dbg!(uri, &parent);
+        match count {
+            1 => self.projects()["products"].as_array().unwrap().to_vec(),
+            2 => self.releases(parent.unwrap().clone()),
+            4 => self.features(parent.unwrap().clone()),
+            _ => result,
+        }
     }
     pub fn generate(&self) -> Result<Value, serde_json::Error> {
         self.reset_screen();
@@ -263,6 +271,7 @@ impl<'a> Aha<'a> {
     }
 
     pub fn features(&self, project_id: String) -> Vec<Value> {
+        println!("feature load {}", project_id);
         let releases_url = self
             .url_builder()
             .join("releases/")
@@ -272,7 +281,7 @@ impl<'a> Aha<'a> {
             .join("features?per_page=2000&fields=id,name,description")
             .unwrap();
         let releases = self.get(releases_url, "features".to_string()).unwrap();
-        releases.as_array().unwrap().to_vec()
+        releases["features"].as_array().unwrap().to_vec()
     }
     pub fn create_feature(&self, name: String, notes: i8) -> Result<Value, serde_json::Error> {
         let projects_url = self.url_builder().join("products?per_page=200").unwrap();
