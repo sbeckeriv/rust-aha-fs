@@ -20,6 +20,10 @@ pub struct Aha<'a> {
 }
 
 impl<'a> Aha<'a> {
+    pub fn get_uri(&self, uri: &str) -> Vec<Value> {
+        let mut result: Vec<Value> = vec![];
+        result
+    }
     pub fn generate(&self) -> Result<Value, serde_json::Error> {
         self.reset_screen();
         println!("Enter feature name:");

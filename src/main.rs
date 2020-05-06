@@ -23,13 +23,14 @@ use fuse::{
 };
 use libc::{ENOENT, ENOSYS};
 use netfuse::MountOptions;
-use netfuse::{DataItem, DirEntry, LibcError, Metadata, NetworkFilesystem};
+use netfuse::{DirEntry, LibcError, Metadata, NetworkFilesystem};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
+use std::path::PathBuf;
 use structopt::StructOpt;
 use time::Timespec;
 extern crate libc;
@@ -246,7 +247,7 @@ macro_rules! eio {
 }
 
 impl NetworkFilesystem for AhaFS {
-    fn readdir(&mut self, path: &Path) {//-> Box<Iterator<Item = Result<DirEntry, LibcError>>> {
+    fn readdir(&mut self, path: &Path) -> Box<Iterator<Item = Result<DirEntry, LibcError>>> {
         let uri = match path_to_uri(&path) {
             Ok(u) => u,
             Err(_) => {
@@ -256,29 +257,38 @@ impl NetworkFilesystem for AhaFS {
         };
 
         println!("AFS readdir:  {} -> {}", path.display(), uri);
-/*
-        let dir = self.client.dir(&uri);
-        let iter = dir.list().map(move |child_res| match child_res {
-            Ok(data_item) => Ok(build_dir_entry(&data_item)),
-            Err(err) => eio!("AFS readdir error: {}", err),
-        });
-       let iter= vec![].iter(); 
-        // Returning an Iteratator Trait Object is a bit inflexible.
-        // We can't return iter, because it references `dir` (which does NOT reference self)
-        //   so it's lifetime ends with this function.
-        // We could add `dir` to self, but may need to be able to track multiple dirs
-        //   and dropping them becomes quite complicated
-        //   so until the trait can return `impl Iterator<Item=Result<DirEntry, LibCError>>`
-        //   we're just gonna kill the laziness by collecting early
-        //   and to return an IntoIterator that owns all of it's data.
+
+        let aha = aha::Aha::new(
+            AHACONFIG.0.aha_domain.clone(),
+            AHACONFIG.0.aha_token.clone(),
+            AHACONFIG.0.workflow_email.clone(),
+            &AHACONFIG.1,
+        );
+        let dir = aha.get_uri(&uri);
+        let iter = dir.iter().map(|child| Ok(build_dir_entry(&child)));
+        /*
+                let dir = self.client.dir(&uri);
+                let iter = dir.list().map(move |child_res| match child_res {
+                    Ok(data_item) => Ok(build_dir_entry(&data_item)),
+                    Err(err) => eio!("AFS readdir error: {}", err),
+                });
+               let iter= vec![].iter();
+                // Returning an Iteratator Trait Object is a bit inflexible.
+                // We can't return iter, because it references `dir` (which does NOT reference self)
+                //   so it's lifetime ends with this function.
+                // We could add `dir` to self, but may need to be able to track multiple dirs
+                //   and dropping them becomes quite complicated
+                //   so until the trait can return `impl Iterator<Item=Result<DirEntry, LibCError>>`
+                //   we're just gonna kill the laziness by collecting early
+                //   and to return an IntoIterator that owns all of it's data.
+        */
         let hack = iter.collect::<Vec<_>>().into_iter();
         Box::new(hack)
-*/
     }
 
     fn lookup(&mut self, path: &Path) -> Result<Metadata, LibcError> {
         if valid_connector(&path) {
-            let uri = try!(path_to_uri(&path));
+            let uri = path_to_uri(&path)?;
             println!("AFS lookup: {} -> {}", path.display(), uri);
             /*
             match self.client.data(&uri).into_type() {
@@ -294,7 +304,7 @@ impl NetworkFilesystem for AhaFS {
     }
 
     fn read(&mut self, path: &Path, mut buffer: &mut Vec<u8>) -> Result<usize, LibcError> {
-        let uri = try!(path_to_uri(&path));
+        let uri = path_to_uri(&path)?;
         println!("AFS read: {} -> {}", path.display(), uri);
         /*
         match self.client.file(&uri).get() {
@@ -307,10 +317,8 @@ impl NetworkFilesystem for AhaFS {
             Err(err) => eio!("AFS read error: {}", err),
         }
         */
-
-            Err(err) => eio!("AFS read error: {}", err),
+        Ok(45usize)
     }
-
 }
 
 pub fn valid_connector(path: &Path) -> bool {
@@ -334,7 +342,7 @@ pub fn path_to_uri(path: &Path) -> Result<String, LibcError> {
     let protocol = match iter.next() {
         Some(p) => p.as_os_str(),
         None => {
-            return Err(EPERM);
+            return Err(libc::EPERM);
         }
     };
     let uri_path = iter.as_path();
