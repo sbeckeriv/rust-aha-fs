@@ -246,7 +246,7 @@ macro_rules! eio {
 }
 
 impl NetworkFilesystem for AhaFS {
-    fn readdir(&mut self, path: &Path) -> Box<Iterator<Item = Result<DirEntry, LibcError>>> {
+    fn readdir(&mut self, path: &Path) {//-> Box<Iterator<Item = Result<DirEntry, LibcError>>> {
         let uri = match path_to_uri(&path) {
             Ok(u) => u,
             Err(_) => {
@@ -256,13 +256,13 @@ impl NetworkFilesystem for AhaFS {
         };
 
         println!("AFS readdir:  {} -> {}", path.display(), uri);
-
+/*
         let dir = self.client.dir(&uri);
         let iter = dir.list().map(move |child_res| match child_res {
             Ok(data_item) => Ok(build_dir_entry(&data_item)),
             Err(err) => eio!("AFS readdir error: {}", err),
         });
-
+       let iter= vec![].iter(); 
         // Returning an Iteratator Trait Object is a bit inflexible.
         // We can't return iter, because it references `dir` (which does NOT reference self)
         //   so it's lifetime ends with this function.
@@ -273,18 +273,21 @@ impl NetworkFilesystem for AhaFS {
         //   and to return an IntoIterator that owns all of it's data.
         let hack = iter.collect::<Vec<_>>().into_iter();
         Box::new(hack)
+*/
     }
 
     fn lookup(&mut self, path: &Path) -> Result<Metadata, LibcError> {
         if valid_connector(&path) {
             let uri = try!(path_to_uri(&path));
             println!("AFS lookup: {} -> {}", path.display(), uri);
-
+            /*
             match self.client.data(&uri).into_type() {
                 Ok(data_item) => Ok(build_dir_entry(&data_item).metadata),
-                Err(algorithmia::Error::NotFound(_)) => Err(ENOENT),
                 Err(err) => eio!("AFS lookup error: {}", err),
             }
+            */
+
+            Err(ENOENT)
         } else {
             Err(ENOENT)
         }
@@ -293,6 +296,7 @@ impl NetworkFilesystem for AhaFS {
     fn read(&mut self, path: &Path, mut buffer: &mut Vec<u8>) -> Result<usize, LibcError> {
         let uri = try!(path_to_uri(&path));
         println!("AFS read: {} -> {}", path.display(), uri);
+        /*
         match self.client.file(&uri).get() {
             Ok(mut response) => {
                 let bytes = response
@@ -302,48 +306,11 @@ impl NetworkFilesystem for AhaFS {
             }
             Err(err) => eio!("AFS read error: {}", err),
         }
+        */
+
+            Err(err) => eio!("AFS read error: {}", err),
     }
 
-    fn unlink(&mut self, path: &Path) -> Result<(), LibcError> {
-        let uri = try!(path_to_uri(&path));
-        println!("AFS unlink: {} -> {}", path.display(), uri);
-        match self.client.file(&uri).delete() {
-            Ok(_) => Ok(()),
-            Err(err) => eio!("AFS unlink error: {}", err),
-        }
-    }
-
-    fn rmdir(&mut self, path: &Path) -> Result<(), LibcError> {
-        let uri = try!(path_to_uri(&path));
-        println!("AFS rmdir: {} -> {}", path.display(), uri);
-        match self.client.dir(&uri).delete(false) {
-            Ok(_) => Ok(()),
-            Err(err) => eio!("AFS rmdir error: {}", err),
-        }
-    }
-
-    fn write(&mut self, path: &Path, data: &[u8]) -> Result<(), LibcError> {
-        let uri = try!(path_to_uri(&path));
-        println!(
-            "AFS write: {} -> {} ({} bytes)",
-            path.display(),
-            uri,
-            data.len()
-        );
-        match self.client.file(&uri).put(data) {
-            Ok(_) => Ok(()),
-            Err(err) => eio!("AFS write error: {}", err),
-        }
-    }
-
-    fn mkdir(&mut self, path: &Path) -> Result<(), LibcError> {
-        let uri = try!(path_to_uri(&path));
-        println!("algo_mkdir: {} -> {}", path.display(), uri);
-        match self.client.dir(&uri).create(DataAcl::default()) {
-            Ok(_) => Ok(()),
-            Err(err) => eio!("AFS mkdir error: {}", err),
-        }
-    }
 }
 
 pub fn valid_connector(path: &Path) -> bool {
@@ -384,12 +351,5 @@ pub fn uri_to_path(uri: &str) -> PathBuf {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let data: Value = serde_json::from_str("{}").unwrap();
-    let mut fs = AhaFS::new();
-    let options = ["-o", "ro", "-o", "fsname=ahafs", "-o", "auto_unmount"]
-        .iter()
-        .map(|o| o.as_ref())
-        .collect::<Vec<&OsStr>>();
-    fuse::mount(fs, &"/tmp/ahafs3".to_string(), &options).unwrap();
     Ok(())
 }
