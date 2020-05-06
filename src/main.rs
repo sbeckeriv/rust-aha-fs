@@ -15,12 +15,15 @@ extern crate serde_derive;
 extern crate structopt;
 #[macro_use]
 extern crate prettytable;
+extern crate netfuse;
 extern crate notify_rust;
 extern crate regex;
 use fuse::{
     FileAttr, FileType, Filesystem, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry, Request,
 };
 use libc::{ENOENT, ENOSYS};
+use netfuse::MountOptions;
+use netfuse::{DataItem, DirEntry, LibcError, Metadata, NetworkFilesystem};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
@@ -160,243 +163,224 @@ fn load_config() -> Result<(Env, Opt), Box<dyn Error>> {
 
     Ok((config, opt))
 }
-struct AhaFS {
-    tree: Value,
-    attrs: BTreeMap<u64, FileAttr>,
-    inodes: BTreeMap<String, u64>,
-    loads: BTreeMap<u64, i8>,
-    types: BTreeMap<u64, String>,
-}
+struct AhaFS {}
 impl AhaFS {
-    fn load_releases(&mut self, ino: u64) {}
-    fn load_features(&mut self, ino: u64) {}
-    fn load_inodes(&mut self, ino: &u64) {}
-    fn new() -> AhaFS {
-        // figure out lifetimes
-        let aha = aha::Aha::new(
-            AHACONFIG.0.aha_domain.clone(),
-            AHACONFIG.0.aha_token.clone(),
-            AHACONFIG.0.workflow_email.clone(),
-            &AHACONFIG.1,
-        );
-        let mut attrs = BTreeMap::new();
-        let mut inodes = BTreeMap::new();
-        let mut loads = BTreeMap::new();
-        let mut types = BTreeMap::new();
-        let ts = time::now().to_timespec();
-        let attr = FileAttr {
-            ino: 1,
-            size: 0,
-            blocks: 0,
-            atime: ts,
-            mtime: ts,
-            ctime: ts,
-            crtime: ts,
-            kind: FileType::Directory,
-            perm: 0o755,
-            nlink: 0,
-            uid: 0,
-            gid: 0,
-            rdev: 0,
-            flags: 0,
-        };
-        attrs.insert(1, attr);
-        inodes.insert("/".to_string(), 1);
-        let tree = aha.projects();
-        for (y, x) in tree.get("products").unwrap().as_array().iter().enumerate() {
-            for (i, key) in x.iter().enumerate() {
-                dbg!(key, i);
-                let attr = FileAttr {
-                    ino: key["id"].as_str().unwrap().parse::<u64>().unwrap(),
-                    size: 0,
-                    blocks: 0,
-                    atime: ts,
-                    mtime: ts,
-                    ctime: ts,
-                    crtime: ts,
-                    kind: FileType::Directory,
-                    perm: 0o755,
-                    nlink: 0,
-                    uid: 0,
-                    gid: 0,
-                    rdev: 0,
-                    flags: 0,
-                };
-                attrs.insert(attr.ino, attr);
-                types.insert(attr.ino, "project".to_string());
-                //loads.insert(attr.ino, 1);
-                let key_name = key["name"].as_str().unwrap().to_string();
-                inodes.insert(key_name, attr.ino);
+    pub fn mount(options: MountOptions) {
+        let afs = AhaFS {};
+        netfuse::mount(afs, options);
+    }
+}
 
-                let release = aha.releases(key["id"].as_str().unwrap().to_string());
-                dbg!(&release);
-                for (i2, key2) in release.iter().enumerate() {
-                    dbg!(key2, i2);
-                    let attr = FileAttr {
-                        ino: key2["id"].as_str().unwrap().parse::<u64>().unwrap(),
-                        size: 0,
-                        blocks: 0,
-                        atime: ts,
-                        mtime: ts,
-                        ctime: ts,
-                        crtime: ts,
-                        kind: FileType::Directory,
-                        perm: 0o755,
-                        nlink: 0,
-                        uid: 0,
-                        gid: 0,
-                        rdev: 0,
-                        flags: 0,
-                    };
-                    attrs.insert(attr.ino, attr);
-                    types.insert(attr.ino, "release".to_string());
-                    //loads.insert(attr.ino, 1);
-                    let key_name = key2["name"].as_str().unwrap().to_string();
-                    inodes.insert(key_name, attr.ino);
-                }
-            }
+fn build_dir_entry(item: &Value) -> DirEntry {
+    /*
+    match item {
+        &Value::Dir(ref d) => {
+            let meta = Metadata {
+                size: 0,
+                atime: DEFAULT_TIME,
+                mtime: DEFAULT_TIME,
+                ctime: DEFAULT_TIME,
+                crtime: DEFAULT_TIME,
+                kind: FileType::Directory,
+                // TODO: API should indicate if dir is listable or not
+                perm: 0o750,
+            };
+            DirEntry::new(d.basename().expect("dir has no name"), meta)
         }
-        AhaFS {
-            tree: tree.clone(),
-            attrs: attrs,
-            inodes: inodes,
-            loads: loads,
-            types: types,
+        &DataItem::File(ref f) => {
+            let mtime = Timespec::new(f.last_modified.timestamp(), 0);
+            let meta = Metadata {
+                size: f.size,
+                atime: mtime,
+                mtime: mtime,
+                ctime: mtime,
+                crtime: mtime,
+                kind: FileType::RegularFile,
+                perm: 0o640,
+            };
+            DirEntry::new(f.basename().expect("file has no name"), meta)
+        }
+    }
+    */
+    let meta = Metadata {
+        size: 0,
+        atime: DEFAULT_TIME,
+        mtime: DEFAULT_TIME,
+        ctime: DEFAULT_TIME,
+        crtime: DEFAULT_TIME,
+        kind: FileType::Directory,
+        // TODO: API should indicate if dir is listable or not
+        perm: 0o750,
+    };
+    DirEntry::new("file has no name", meta)
+}
+
+fn basic_dir_entry(path: &str, perm: u16) -> DirEntry {
+    let meta = Metadata {
+        size: 0,
+        atime: DEFAULT_TIME,
+        mtime: DEFAULT_TIME,
+        ctime: DEFAULT_TIME,
+        crtime: DEFAULT_TIME,
+        kind: FileType::Directory,
+        perm: perm,
+    };
+    DirEntry::new(path, meta)
+}
+
+// 2015-03-12 00:00 PST Algorithmia Launch
+pub const DEFAULT_TIME: Timespec = Timespec {
+    sec: 1426147200,
+    nsec: 0,
+};
+
+macro_rules! eio {
+    ($fmt:expr) => {{
+        println!($fmt);
+        Err(EIO)
+    }};
+    ($fmt:expr, $($arg:tt)*) => {{
+        println!($fmt, $($arg)*);
+        Err(EIO)
+    }};
+}
+
+impl NetworkFilesystem for AhaFs {
+    fn readdir(&mut self, path: &Path) -> Box<Iterator<Item = Result<DirEntry, LibcError>>> {
+        let uri = match path_to_uri(&path) {
+            Ok(u) => u,
+            Err(_) => {
+                // The default root listing
+                return Box::new(vec![Ok(basic_dir_entry("/data", 0o550))].into_iter());
+            }
+        };
+
+        println!("AFS readdir:  {} -> {}", path.display(), uri);
+
+        let dir = self.client.dir(&uri);
+        let iter = dir.list().map(move |child_res| match child_res {
+            Ok(data_item) => Ok(build_dir_entry(&data_item)),
+            Err(err) => eio!("AFS readdir error: {}", err),
+        });
+
+        // Returning an Iteratator Trait Object is a bit inflexible.
+        // We can't return iter, because it references `dir` (which does NOT reference self)
+        //   so it's lifetime ends with this function.
+        // We could add `dir` to self, but may need to be able to track multiple dirs
+        //   and dropping them becomes quite complicated
+        //   so until the trait can return `impl Iterator<Item=Result<DirEntry, LibCError>>`
+        //   we're just gonna kill the laziness by collecting early
+        //   and to return an IntoIterator that owns all of it's data.
+        let hack = iter.collect::<Vec<_>>().into_iter();
+        Box::new(hack)
+    }
+
+    fn lookup(&mut self, path: &Path) -> Result<Metadata, LibcError> {
+        if valid_connector(&path) {
+            let uri = try!(path_to_uri(&path));
+            println!("AFS lookup: {} -> {}", path.display(), uri);
+
+            match self.client.data(&uri).into_type() {
+                Ok(data_item) => Ok(build_dir_entry(&data_item).metadata),
+                Err(algorithmia::Error::NotFound(_)) => Err(ENOENT),
+                Err(err) => eio!("AFS lookup error: {}", err),
+            }
+        } else {
+            Err(ENOENT)
+        }
+    }
+
+    fn read(&mut self, path: &Path, mut buffer: &mut Vec<u8>) -> Result<usize, LibcError> {
+        let uri = try!(path_to_uri(&path));
+        println!("AFS read: {} -> {}", path.display(), uri);
+        match self.client.file(&uri).get() {
+            Ok(mut response) => {
+                let bytes = response
+                    .read_to_end(&mut buffer)
+                    .expect("failed to read response bytes");
+                Ok(bytes as usize)
+            }
+            Err(err) => eio!("AFS read error: {}", err),
+        }
+    }
+
+    fn unlink(&mut self, path: &Path) -> Result<(), LibcError> {
+        let uri = try!(path_to_uri(&path));
+        println!("AFS unlink: {} -> {}", path.display(), uri);
+        match self.client.file(&uri).delete() {
+            Ok(_) => Ok(()),
+            Err(err) => eio!("AFS unlink error: {}", err),
+        }
+    }
+
+    fn rmdir(&mut self, path: &Path) -> Result<(), LibcError> {
+        let uri = try!(path_to_uri(&path));
+        println!("AFS rmdir: {} -> {}", path.display(), uri);
+        match self.client.dir(&uri).delete(false) {
+            Ok(_) => Ok(()),
+            Err(err) => eio!("AFS rmdir error: {}", err),
+        }
+    }
+
+    fn write(&mut self, path: &Path, data: &[u8]) -> Result<(), LibcError> {
+        let uri = try!(path_to_uri(&path));
+        println!(
+            "AFS write: {} -> {} ({} bytes)",
+            path.display(),
+            uri,
+            data.len()
+        );
+        match self.client.file(&uri).put(data) {
+            Ok(_) => Ok(()),
+            Err(err) => eio!("AFS write error: {}", err),
+        }
+    }
+
+    fn mkdir(&mut self, path: &Path) -> Result<(), LibcError> {
+        let uri = try!(path_to_uri(&path));
+        println!("algo_mkdir: {} -> {}", path.display(), uri);
+        match self.client.dir(&uri).create(DataAcl::default()) {
+            Ok(_) => Ok(()),
+            Err(err) => eio!("AFS mkdir error: {}", err),
         }
     }
 }
 
-impl Filesystem for AhaFS {
-    fn getattr(&mut self, _req: &Request, ino: u64, reply: ReplyAttr) {
-        println!("getattr(ino={})", ino);
-        match self.attrs.get(&ino) {
-            Some(attr) => {
-                let ttl = Timespec::new(1, 0);
-                reply.attr(&ttl, attr);
-            }
-            None => reply.error(ENOENT),
-        };
+pub fn valid_connector(path: &Path) -> bool {
+    let mut iter = path.components();
+    if path.has_root() {
+        let _ = iter.next();
     }
 
-    fn lookup(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
-        println!("lookup(parent={}, name={})", parent, name.to_str().unwrap());
-        let inode = match self.inodes.get(name.to_str().unwrap()) {
-            Some(inode) => inode,
-            None => {
-                println!("lookup no inode)");
-                reply.error(ENOENT);
-                return;
-            }
-        };
-        match self.attrs.get(inode) {
-            Some(attr) => {
-                println!("looku)found att");
-                let ttl = Timespec::new(1, 0);
-                reply.entry(&ttl, attr, 0);
-            }
-            None => reply.error(ENOENT),
-        };
+    match iter.next().map(|c| c.as_os_str().to_string_lossy()) {
+        Some(p) => p == "data" || p.starts_with("dropbox") || p.starts_with("s3"),
+        _ => false,
+    }
+}
+
+pub fn path_to_uri(path: &Path) -> Result<String, LibcError> {
+    let mut iter = path.components();
+    if path.has_root() {
+        let _ = iter.next();
     }
 
-    fn read(
-        &mut self,
-        _req: &Request,
-        ino: u64,
-        fh: u64,
-        offset: i64,
-        size: u32,
-        reply: ReplyData,
-    ) {
-        println!(
-            "read(ino={}, fh={}, offset={}, size={})",
-            ino, fh, offset, size
-        );
-        for (key, &inode) in &self.inodes {
-            if inode == ino {
-                let value = &self.tree[key];
-                reply.data(value.as_str().unwrap().to_string().as_bytes());
-                return;
-            }
+    let protocol = match iter.next() {
+        Some(p) => p.as_os_str(),
+        None => {
+            return Err(EPERM);
         }
-        reply.error(ENOENT);
-    }
+    };
+    let uri_path = iter.as_path();
+    Ok(format!(
+        "{}://{}",
+        protocol.to_string_lossy(),
+        uri_path.to_string_lossy()
+    ))
+}
 
-    fn readdir(
-        &mut self,
-        _req: &Request,
-        ino: u64,
-        fh: u64,
-        offset: i64,
-        mut reply: ReplyDirectory,
-    ) {
-        println!("readdir(ino={}, fh={}, offset={})", ino, fh, offset);
-        if ino == 1 {
-            if offset == 0 {
-                reply.add(1, 0, FileType::Directory, ".");
-                reply.add(1, 1, FileType::Directory, "..");
-                for (key, &inode) in &self.inodes {
-                    if inode == 1 {
-                        continue;
-                    }
-                    let offset = inode as i64; // hack
-                    println!("\tkey={}, inode={}, offset={}", key, inode, offset);
-                    reply.add(inode, offset, FileType::RegularFile, key);
-                }
-            }
-            reply.ok();
-        } else {
-            if self.loads.get(&ino).is_none() {
-                self.loads.insert(ino, 1);
-                let aha = aha::Aha::new(
-                    AHACONFIG.0.aha_domain.clone(),
-                    AHACONFIG.0.aha_token.clone(),
-                    AHACONFIG.0.workflow_email.clone(),
-                    &AHACONFIG.1,
-                );
-
-                dbg!(self.types.get(&ino));
-                if self.types.get(&ino).is_some() {
-                    let type_name = self.types.get(&ino).unwrap().clone();
-                    if type_name == "project".to_string() {
-                        let release = aha.releases(ino.to_string());
-                        dbg!(&release);
-                        let mut a: Vec<(u64, i64, String)> = vec![];
-                        for (i, key) in release.iter().enumerate() {
-                            let ts = time::now().to_timespec();
-                            let attr = FileAttr {
-                                ino: key["id"].as_str().unwrap().parse::<u64>().unwrap(),
-                                size: 0,
-                                blocks: 0,
-                                atime: ts,
-                                mtime: ts,
-                                ctime: ts,
-                                crtime: ts,
-                                kind: FileType::Directory,
-                                perm: 0o755,
-                                nlink: 0,
-                                uid: 0,
-                                gid: 0,
-                                rdev: 0,
-                                flags: 0,
-                            };
-                            self.attrs.insert(attr.ino, attr);
-                            self.types.insert(attr.ino, "release".to_string());
-                            let key_name = key["name"].as_str().unwrap().to_string();
-                            self.inodes.insert(key_name.clone(), attr.ino);
-                            a.push((attr.ino, i as i64, key_name.clone()));
-                        }
-                        dbg!(&a);
-                        for (y, x, z) in a {
-                            println!("\tkey={}, inode={}, offset={}", z, y, x);
-                            reply.add(y, x, FileType::Directory, z);
-                        }
-                    }
-                    if type_name == "release".to_string() {}
-                }
-            }
-            reply.ok();
-        }
-    }
+pub fn uri_to_path(uri: &str) -> PathBuf {
+    uri.splitn(2, "://")
+        .fold(Path::new("/").to_owned(), |acc, p| acc.join(Path::new(p)))
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
