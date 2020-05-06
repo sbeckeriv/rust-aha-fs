@@ -237,15 +237,15 @@ pub const DEFAULT_TIME: Timespec = Timespec {
 macro_rules! eio {
     ($fmt:expr) => {{
         println!($fmt);
-        Err(EIO)
+        Err(libc::EIO)
     }};
     ($fmt:expr, $($arg:tt)*) => {{
         println!($fmt, $($arg)*);
-        Err(EIO)
+        Err(libc::EIO)
     }};
 }
 
-impl NetworkFilesystem for AhaFs {
+impl NetworkFilesystem for AhaFS {
     fn readdir(&mut self, path: &Path) -> Box<Iterator<Item = Result<DirEntry, LibcError>>> {
         let uri = match path_to_uri(&path) {
             Ok(u) => u,
