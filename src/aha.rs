@@ -20,8 +20,8 @@ pub struct Aha<'a> {
 }
 
 impl<'a> Aha<'a> {
-    pub fn get_uri(&self, uri: &str) -> Vec<Value> {
-        let mut result: Vec<Value> = vec![];
+    pub fn get_uri(&self, _uri: &str) -> Vec<Value> {
+        let result: Vec<Value> = vec![];
         result
     }
     pub fn generate(&self) -> Result<Value, serde_json::Error> {
@@ -410,7 +410,7 @@ impl<'a> Aha<'a> {
             println!("{} text {:?}", base, content);
         }
         let feature: Result<Value, _> = serde_json::from_str(&content.unwrap_or("".to_string()));
-        if let Ok(mut fe) = feature {
+        if let Ok(fe) = feature {
             Ok(fe)
         } else {
             let ex: Result<Value, serde_json::Error> = Err(feature.unwrap_err());

@@ -21,7 +21,7 @@ extern crate regex;
 use fuse::{
     FileAttr, FileType, Filesystem, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry, Request,
 };
-use libc::{ENOENT, ENOSYS};
+use libc::{ENOENT};
 use netfuse::MountOptions;
 use netfuse::{DirEntry, LibcError, Metadata, NetworkFilesystem};
 use std::collections::HashMap;
@@ -38,11 +38,11 @@ extern crate time;
 mod aha;
 mod github;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
-use std::env;
-use std::ffi::OsStr;
+
+
+
 
 #[derive(StructOpt, Debug)]
 pub struct Opt {
@@ -172,7 +172,7 @@ impl AhaFS {
     }
 }
 
-fn build_dir_entry(item: &Value) -> DirEntry {
+fn build_dir_entry(_item: &Value) -> DirEntry {
     /*
     match item {
         &Value::Dir(ref d) => {
@@ -224,7 +224,7 @@ fn basic_dir_entry(path: &str, perm: u16) -> DirEntry {
         ctime: DEFAULT_TIME,
         crtime: DEFAULT_TIME,
         kind: FileType::Directory,
-        perm: perm,
+        perm,
     };
     DirEntry::new(path, meta)
 }
@@ -247,7 +247,7 @@ macro_rules! eio {
 }
 
 impl NetworkFilesystem for AhaFS {
-    fn readdir(&mut self, path: &Path) -> Box<Iterator<Item = Result<DirEntry, LibcError>>> {
+    fn readdir(&mut self, path: &Path) -> Box<dyn Iterator<Item = Result<DirEntry, LibcError>>> {
         let uri = match path_to_uri(&path) {
             Ok(u) => u,
             Err(_) => {
@@ -303,7 +303,7 @@ impl NetworkFilesystem for AhaFS {
         }
     }
 
-    fn read(&mut self, path: &Path, mut buffer: &mut Vec<u8>) -> Result<usize, LibcError> {
+    fn read(&mut self, path: &Path, _buffer: &mut Vec<u8>) -> Result<usize, LibcError> {
         let uri = path_to_uri(&path)?;
         println!("AFS read: {} -> {}", path.display(), uri);
         /*

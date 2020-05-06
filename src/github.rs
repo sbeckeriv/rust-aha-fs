@@ -72,7 +72,7 @@ pub fn pr_data(config: &GithubEnv, author: String, open: bool) -> RootInterface 
     let (owner, name) = parse_repo_name(&config.workflow_repo).unwrap();
     let client = reqwest::Client::new();
     let state = if open { "open" } else { "closed" };
-    let author = if author.len() > 0 {
+    let author = if !author.is_empty() {
         format!("+author:{}", author)
     } else {
         author
