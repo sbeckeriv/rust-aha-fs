@@ -165,6 +165,7 @@ struct AhaFS {
     products: HashMap<String, String>,
     releases: HashMap<String, String>,
     features: HashMap<String, String>,
+    feature_values: HashMap<String, Value>,
     epics: HashMap<String, String>,
 }
 impl AhaFS {
@@ -173,6 +174,7 @@ impl AhaFS {
             products: HashMap::new(),
             releases: HashMap::new(),
             features: HashMap::new(),
+            feature_values: HashMap::new(),
             epics: HashMap::new(),
         };
         netfuse::mount(afs, options);
@@ -180,7 +182,8 @@ impl AhaFS {
 }
 
 fn build_dir_entry(item: &Value, path_string: &str) -> DirEntry {
-    if path_string.contains("/features/") {
+    dbg!(item, path_string);
+    if path_string.ends_with("/features") {
         let meta = Metadata {
             size: item["description"]["body"]
                 .as_str()
@@ -209,36 +212,6 @@ fn build_dir_entry(item: &Value, path_string: &str) -> DirEntry {
         };
         DirEntry::new(item["name"].as_str().expect("dir has no name"), meta)
     }
-    /*
-    match item {
-        &Value::Dir(ref d) => {
-            let meta = Metadata {
-                size: 0,
-                atime: DEFAULT_TIME,
-                mtime: DEFAULT_TIME,
-                ctime: DEFAULT_TIME,
-                crtime: DEFAULT_TIME,
-                kind: FileType::Directory,
-                // TODO: API should indicate if dir is listable or not
-                perm: 0o750,
-            };
-            DirEntry::new(d.basename().expect("dir has no name"), meta)
-        }
-        &DataItem::File(ref f) => {
-            let mtime = Timespec::new(f.last_modified.timestamp(), 0);
-            let meta = Metadata {
-                size: f.size,
-                atime: mtime,
-                mtime: mtime,
-                ctime: mtime,
-                crtime: mtime,
-                kind: FileType::RegularFile,
-                perm: 0o640,
-            };
-            DirEntry::new(f.basename().expect("file has no name"), meta)
-        }
-    }
-    */
 }
 
 fn basic_dir_entry(path: &str, perm: u16) -> DirEntry {
@@ -325,7 +298,8 @@ impl NetworkFilesystem for AhaFS {
                 }
 
                 4 => {
-                    self.features.insert(key, value);
+                    self.features.insert(key, value.clone());
+                    self.feature_values.insert(value, x.clone());
                 }
                 _ => (),
             };
@@ -354,21 +328,22 @@ impl NetworkFilesystem for AhaFS {
         }
     }
 
-    fn read(&mut self, path: &Path, _buffer: &mut Vec<u8>) -> Result<usize, LibcError> {
+    fn read(&mut self, path: &Path, buffer: &mut Vec<u8>) -> Result<usize, LibcError> {
         let uri = path_to_uri(&path)?;
         println!("AFS read: {} -> {}", path.display(), uri);
-        /*
-        match self.client.file(&uri).get() {
-            Ok(mut response) => {
-                let bytes = response
-                    .read_to_end(&mut buffer)
+        match self.features.get(&path.display().to_string()) {
+            Some(feature_id) => {
+                let feature = self.feature_values.get(feature_id).unwrap();
+                let bytes = feature["description"]["body"]
+                    .as_str()
+                    .unwrap()
+                    .as_bytes()
+                    .read_to_end(buffer)
                     .expect("failed to read response bytes");
                 Ok(bytes as usize)
             }
-            Err(err) => eio!("AFS read error: {}", err),
+            None => eio!("AFS read error: {}", libc::EPERM),
         }
-        */
-        Ok(45usize)
     }
 }
 
