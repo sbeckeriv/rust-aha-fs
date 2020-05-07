@@ -10,3 +10,4 @@ after removing  `fusermount -u /tmp/ahafs`
 data/projects/releases/(epics|features)/files (description body)
 
 epics dont work. its a mess. read only access. 
+![example](https://raw.githubusercontent.com/sbeckeriv/rust-aha-fs/master/ahafs.gif)
